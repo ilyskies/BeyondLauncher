@@ -6,6 +6,9 @@ import { Background } from "@/components/shared/background";
 import { Check, Edit, Lock, AlertCircle } from "lucide-react";
 import { useNavigate } from "@/lib/hooks/useNavigate";
 import { useOnboarding } from "@/lib/stores/onboarding";
+import { useSocketStore } from "@/lib/socket";
+import { useAuth } from "@/lib/stores/auth";
+import { useErrorBanners } from "@/lib/stores/error_banner";
 
 export default function UsernameView() {
   const [username, setUsername] = useState("");
@@ -16,6 +19,9 @@ export default function UsernameView() {
 
   const navigate = useNavigate();
   const { completeStep, setStep, setUsername: saveUsername } = useOnboarding();
+  const { send, isConnected } = useSocketStore();
+  const { isAuthenticated } = useAuth();
+  const { add } = useErrorBanners();
 
   useEffect(() => {
     setStep("username");
@@ -163,17 +169,43 @@ export default function UsernameView() {
     setIsLocked(false);
   };
 
-  const handleContinue = () => {
+  const handleContinue = async () => {
     if (isValid && !isAnimating && isLocked) {
+      if (!isConnected || !isAuthenticated) {
+        add({
+          type: "error",
+          title: "Connection Required",
+          message:
+            "Please ensure you are connected to the server before setting your username.",
+          autoDismiss: true,
+          dismissAfter: 5000,
+        });
+        return;
+      }
+
       setIsAnimating(true);
 
-      saveUsername(username);
-      completeStep("username");
+      try {
+        send("set_new_username", { username });
 
-      setTimeout(() => {
-        console.log("Username set:", username);
-        navigate("/onboarding/complete");
-      }, 800);
+        saveUsername(username);
+        completeStep("username");
+
+        setTimeout(() => {
+          console.log("Username set:", username);
+          navigate("/onboarding/complete");
+        }, 800);
+      } catch (error) {
+        console.error("Failed to set username:", error);
+        add({
+          type: "error",
+          title: "Username Error",
+          message: "Failed to set username. Please try again.",
+          autoDismiss: true,
+          dismissAfter: 5000,
+        });
+        setIsAnimating(false);
+      }
     }
   };
 

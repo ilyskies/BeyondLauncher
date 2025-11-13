@@ -6,6 +6,9 @@ import { useNavigate } from "@/lib/hooks/useNavigate";
 import { ChevronDown } from "lucide-react";
 import { SocketBanner } from "@/components/shared/banners/socket_banner";
 import { useOnboarding } from "@/lib/stores/onboarding";
+import { useSocketStore } from "@/lib/socket";
+import { useAuth } from "@/lib/stores/auth";
+import { useErrorBanners } from "@/lib/stores/error_banner";
 
 export default function TermsView() {
   const [hasScrolledToBottom, setHasScrolledToBottom] = useState(false);
@@ -18,6 +21,9 @@ export default function TermsView() {
   const animationFrameRef = useRef<number>(0);
 
   const { completeStep, setStep } = useOnboarding();
+  const { isConnected } = useSocketStore();
+  const { isAuthenticated } = useAuth();
+  const { add } = useErrorBanners();
 
   useEffect(() => {
     setStep("terms");
@@ -102,14 +108,33 @@ export default function TermsView() {
 
   const handleContinue = () => {
     if (agreed && hasScrolledToBottom && !isAnimating) {
-      setIsAnimating(true);
+      if (!isConnected || !isAuthenticated) {
+        add({
+          type: "error",
+          title: "Connection Required",
+          message:
+            "Please ensure you are connected to the server before continuing.",
+          autoDismiss: true,
+          dismissAfter: 5000,
+        });
+        return;
+      }
 
+      setIsAnimating(true);
       completeStep("terms");
       setTimeout(() => {
         navigate("/onboarding/username");
       }, 300);
     }
   };
+
+  useEffect(() => {
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     return () => {

@@ -13,6 +13,7 @@ interface AuthState {
   patchUser: (updates: Partial<AnoraUser>) => void;
   setLoading: (loading: boolean) => void;
   clear: () => void;
+  setDisplayName: (displayName: string) => void;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -54,6 +55,21 @@ export const useAuthStore = create<AuthState>()(
         });
       },
 
+      setDisplayName: (displayName: string) => {
+        const { currentUser } = get();
+        if (!currentUser) return;
+
+        set({
+          currentUser: {
+            ...currentUser,
+            UserAccount: {
+              ...currentUser.UserAccount,
+              DisplayName: displayName,
+            },
+          },
+        });
+      },
+
       setLoading: (loading) => {
         set({ isLoading: loading });
       },
@@ -84,13 +100,6 @@ export const useAuth = () => {
   const isAuthenticated = Boolean(store.accessToken);
   const sessionValid = Boolean(store.accessToken && store.currentUser);
 
-  console.log("[Auth Debug]", {
-    token: store.accessToken,
-    currentUser: store.currentUser,
-    isAuthenticated,
-    sessionValid,
-  });
-
   return {
     token: store.accessToken,
     user: store.currentUser,
@@ -102,6 +111,7 @@ export const useAuth = () => {
     logout: store.signOut,
     updateUser: store.updateUser,
     patchUser: store.patchUser,
+    setDisplayName: store.setDisplayName,
     setLoading: store.setLoading,
     clearAuth: store.clear,
   };

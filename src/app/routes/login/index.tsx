@@ -30,11 +30,14 @@ export default function Login() {
 
     setStatus("loading");
     try {
-      const redirectUri = "http://127.0.0.1:8080/callback";
-      const encodedRedirectUri = encodeURIComponent(redirectUri);
-      await open(
-        `https://discord.com/oauth2/authorize?client_id=1437326864212557958&response_type=code&redirect_uri=${encodedRedirectUri}&scope=identify%20guilds.members.read`
+      const callback = await fetch(
+        "http://127.0.0.1:5078/discord/api/callback"
       );
+      const response = await callback.text();
+
+      if (response) {
+        await open(response);
+      }
     } catch (error) {
       console.error("Login failed:", error);
       setStatus("failed");

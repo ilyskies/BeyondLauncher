@@ -6,9 +6,11 @@ export interface SocketEventMap {
   error: { message: string; critical: boolean };
 
   user: AnoraUser;
+  new_username: NewUsernameData;
   request_user: void;
+  authenticated: void;
 
-  set_username: { newDisplayName: string };
+  set_new_username: { username: string };
   request_heartbeat: void;
 }
 
@@ -20,4 +22,8 @@ export interface SocketMessage<T extends SocketEventType = SocketEventType> {
   data: SocketEventMap[T];
   timestamp: number;
   version: string;
+}
+
+export interface NewUsernameData {
+  username: string;
 }

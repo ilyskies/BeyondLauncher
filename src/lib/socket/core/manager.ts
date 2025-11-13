@@ -34,7 +34,6 @@ export class LauncherSocket {
         this.config.version,
         this.config.token
       );
-
       this.setupEventHandlers();
 
       await new Promise((resolve, reject) => {
@@ -79,17 +78,13 @@ export class LauncherSocket {
   }
 
   private handleConnectionError(error: unknown): void {
-    console.error("WebSocket connection error:", error);
-
     this.events.emit("error", {
       message: error instanceof Error ? error.message : String(error),
       critical: true,
     });
 
     if (!this.isIntentionalDisconnect) {
-      this.attemptReconnect().catch((err) => {
-        console.error("Reconnection attempt failed:", err);
-      });
+      this.attemptReconnect();
     }
   }
 
@@ -99,7 +94,7 @@ export class LauncherSocket {
     this.connection.addEventListener("message", (event) => {
       try {
         const message = JSON.parse(event.data) as SocketMessage;
-        this.events.emit(message.type, message.data);
+        this.events.emit(message.type as SocketEventType, message.data);
       } catch {
         this.events.emit("error", {
           message: "Failed to parse message",
@@ -151,9 +146,7 @@ export class LauncherSocket {
     type: T,
     data: Omit<SocketEventMap[T], "timestamp" | "version">
   ): boolean {
-    if (!this.connection) return false;
-
-    return this.connection.safeSend({ type, data });
+    return this.connection?.safeSend({ type, data }) ?? false;
   }
 
   on<T extends SocketEventType>(
