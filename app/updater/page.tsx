@@ -47,14 +47,6 @@ export default function Updater() {
       <div className="absolute inset-0 bg-black/20 backdrop-blur-[0.5px]" />
 
       <div className="relative z-10 flex flex-col items-center text-center px-4">
-        <div className="text-5xl font-extrabold tracking-wide mb-4">
-          <span className="bg-gradient-to-r from-yellow-100 via-orange-200 to-yellow-300 bg-clip-text text-transparent">
-            Anora
-          </span>
-        </div>
-        <div className="text-lg font-medium mb-2 text-yellow-50/90">
-          Checking for updates
-        </div>
         <div className="text-lg text-yellow-100/80 mb-6">
           {Math.floor(displayedProgress)}%
         </div>
