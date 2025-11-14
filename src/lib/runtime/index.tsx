@@ -22,7 +22,7 @@ interface SocketErrorData {
 const DISABLED_ROUTES = ["/updater", "/login"];
 
 export const Runtime = ({ children }: RuntimeProps) => {
-  const { token, isAuthenticated, updateUser, patchUser, setDisplayName } =
+  const { token, isAuthenticated, updateUser, setDisplayName, user } =
     useAuth();
   const { config, isDev } = useConfig();
   const { add } = useErrorBanners();
@@ -36,15 +36,21 @@ export const Runtime = ({ children }: RuntimeProps) => {
     () => {}
   );
   const isAuthenticatedRef = useRef(false);
+  const userRequestIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const lastUserDataRef = useRef<string>("");
 
   useEffect(() => {
     isAuthenticatedRef.current = isAuthenticated;
   }, [isAuthenticated]);
 
   useEffect(() => {
-    userHandlerRef.current = (user: AnoraUser) => {
-      if (user?.UserAccount) {
-        updateUser(user);
+    userHandlerRef.current = (newUser: AnoraUser) => {
+      if (!newUser?.UserAccount) return;
+
+      const newUserString = JSON.stringify(newUser);
+      if (newUserString !== lastUserDataRef.current) {
+        lastUserDataRef.current = newUserString;
+        updateUser(newUser);
       }
     };
   }, [updateUser]);
@@ -123,9 +129,38 @@ export const Runtime = ({ children }: RuntimeProps) => {
     return () => off("error", handleError);
   }, [on, off]);
 
+  const startUserRequestInterval = () => {
+    if (userRequestIntervalRef.current) {
+      clearInterval(userRequestIntervalRef.current);
+    }
+
+    sendRef.current("request_user", undefined);
+
+    userRequestIntervalRef.current = setInterval(() => {
+      if (isAuthenticatedRef.current) {
+        console.log("[Runtime] Requesting user data update");
+        sendRef.current("request_user", undefined);
+      }
+    }, 2000);
+  };
+
+  const stopUserRequestInterval = () => {
+    if (userRequestIntervalRef.current) {
+      clearInterval(userRequestIntervalRef.current);
+      userRequestIntervalRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    if (user) {
+      lastUserDataRef.current = JSON.stringify(user);
+    }
+  }, [user]);
+
   useEffect(() => {
     if (!shouldEnableSocket || !token || !isAuthenticated) {
       disconnect();
+      stopUserRequestInterval();
       return;
     }
 
@@ -139,7 +174,8 @@ export const Runtime = ({ children }: RuntimeProps) => {
 
     initialize(socketConfig);
 
-    const handleUserData = (user: AnoraUser) => userHandlerRef.current?.(user);
+    const handleUserData = (newUser: AnoraUser) =>
+      userHandlerRef.current?.(newUser);
 
     const handleConnected = () => {
       console.log("[Runtime] Socket connected");
@@ -147,10 +183,11 @@ export const Runtime = ({ children }: RuntimeProps) => {
 
     const handleAuthenticated = () => {
       console.log("[Runtime] Socket authenticated");
-      sendRef.current("request_user", undefined);
+      startUserRequestInterval();
     };
 
     const handleDisconnected = (data: { code: number; reason: string }) => {
+      stopUserRequestInterval();
       if (data.code === 1008 && data.reason.includes("token")) {
         errorHandlerRef.current?.({
           message: "Authentication failed",
@@ -178,6 +215,7 @@ export const Runtime = ({ children }: RuntimeProps) => {
     on("new_username", handleNewUsername);
 
     connect().catch((err) => {
+      stopUserRequestInterval();
       errorHandlerRef.current?.({
         message: err.message || "Failed to connect to server",
         critical: true,
@@ -185,6 +223,7 @@ export const Runtime = ({ children }: RuntimeProps) => {
     });
 
     return () => {
+      stopUserRequestInterval();
       off("user", handleUserData);
       off("connected", handleConnected);
       off("authenticated", handleAuthenticated);
@@ -204,7 +243,6 @@ export const Runtime = ({ children }: RuntimeProps) => {
     isDev,
     on,
     off,
-    patchUser,
     setDisplayName,
   ]);
 

@@ -1,32 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import Image from "next/image";
+import { useSocketStore } from "@/lib/socket";
+import { NewsItem } from "@/types/socket";
 
-interface NewsItem {
-  id: string;
-  title: string;
-  subtitle: string;
-  description: string;
-  backgroundImage: string;
-}
-
-const newsItems: NewsItem[] = [
+const defaultNewsItems: NewsItem[] = [
   {
-    id: "test",
+    id: "default",
     title: "ANORA",
-    subtitle: "Chapter 2 Season 5",
+    subtitle: "Welcome to Anora",
     description:
-      "New frontiers await with enhanced gameplay, new locations, and exclusive seasonal content.",
-    backgroundImage:
-      "https://static0.gamerantimages.com/wordpress/wp-content/uploads/2021/01/Fortnite-Season-5.jpg",
-  },
-  {
-    id: "test2",
-    title: "ANORA",
-    subtitle: "Chapter 2 Season 5",
-    description:
-      "New frontiers await with enhanced gameplay, new locations, and exclusive seasonal content.",
+      "Experience the legacy of Fortnite with enhanced gameplay and exclusive content.",
     backgroundImage:
       "https://static0.gamerantimages.com/wordpress/wp-content/uploads/2021/01/Fortnite-Season-5.jpg",
   },
@@ -37,11 +22,58 @@ export function NewsSection() {
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [imageLoaded, setImageLoaded] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
-
-  const currentNews = newsItems[currentIndex];
-  const hasMultipleItems = newsItems.length > 1;
+  const [newsItems, setNewsItems] = useState<NewsItem[]>(defaultNewsItems);
+  const { send, on, off, isConnected } = useSocketStore();
+  const newsUpdateIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const lastNewsDataRef = useRef<string>("");
+  const imageLoadTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
+    if (isConnected) {
+      send("request_news", undefined);
+
+      newsUpdateIntervalRef.current = setInterval(() => {
+        send("request_news", undefined);
+      }, 60000);
+
+      return () => {
+        if (newsUpdateIntervalRef.current) {
+          clearInterval(newsUpdateIntervalRef.current);
+          newsUpdateIntervalRef.current = null;
+        }
+      };
+    } else {
+      if (newsUpdateIntervalRef.current) {
+        clearInterval(newsUpdateIntervalRef.current);
+        newsUpdateIntervalRef.current = null;
+      }
+    }
+  }, [isConnected, send]);
+
+  useEffect(() => {
+    const handleNewsUpdate = (data: { news: NewsItem[] }) => {
+      const newNewsString = JSON.stringify(data.news);
+      if (newNewsString !== lastNewsDataRef.current) {
+        console.log("[NewsSection] News updated:", data.news);
+        lastNewsDataRef.current = newNewsString;
+
+        setNewsItems(data.news);
+
+        if (currentIndex >= data.news.length) {
+          setCurrentIndex(0);
+        }
+      }
+    };
+
+    on("news_update", handleNewsUpdate);
+
+    return () => {
+      off("news_update", handleNewsUpdate);
+    };
+  }, [on, off, currentIndex]);
+
+  useEffect(() => {
+    const hasMultipleItems = newsItems.length > 1;
     if (!hasMultipleItems || isPaused) return;
 
     const interval = setInterval(() => {
@@ -53,18 +85,33 @@ export function NewsSection() {
     }, 5000);
 
     return () => clearInterval(interval);
-  }, [isPaused, hasMultipleItems]);
+  }, [isPaused, newsItems.length]);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
+      const currentNews = newsItems[currentIndex];
+      if (!currentNews) return;
+
+      const timer = setTimeout(() => {
+        setImageLoaded(false);
+      }, 0);
+
       const img = new window.Image();
       img.onload = () => setImageLoaded(true);
       img.onerror = () => setImageLoaded(true);
       img.src = currentNews.backgroundImage;
+
+      return () => {
+        clearTimeout(timer);
+        if (imageLoadTimeoutRef.current) {
+          clearTimeout(imageLoadTimeoutRef.current);
+        }
+      };
     }
-  }, [currentNews.backgroundImage]);
+  }, [currentIndex, newsItems]);
 
   const handleDotClick = (index: number) => {
+    const hasMultipleItems = newsItems.length > 1;
     if (index === currentIndex || !hasMultipleItems) return;
 
     setIsTransitioning(true);
@@ -73,6 +120,33 @@ export function NewsSection() {
       setIsTransitioning(false);
     }, 300);
   };
+
+  const currentNews = newsItems[currentIndex];
+  const hasMultipleItems = newsItems.length > 1;
+
+  useEffect(() => {
+    return () => {
+      if (newsUpdateIntervalRef.current) {
+        clearInterval(newsUpdateIntervalRef.current);
+      }
+      if (imageLoadTimeoutRef.current) {
+        clearTimeout(imageLoadTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  if (!currentNews) {
+    return (
+      <section className="news-section relative">
+        <div className="bg-card border-border/80 overflow-hidden border rounded-xl h-96 flex items-center justify-center">
+          <div className="text-center">
+            <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+            <p className="text-muted-foreground">Loading news...</p>
+          </div>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="news-section relative">

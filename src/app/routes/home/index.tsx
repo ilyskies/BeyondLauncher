@@ -7,13 +7,15 @@ import { useAuth } from "@/lib/stores/auth";
 import { useSocketErrors } from "@/lib/hooks/useSocketErrors";
 import { SocketBanner } from "@/components/shared/banners/socket_banner";
 import { ContentArea } from "@/components/layout/content-area";
+import { useErrorBanners } from "@/lib/stores/error_banner";
 
 export default function HomeView() {
   const [activeTab, setActiveTab] = useState<"home" | "library" | "settings">(
     "home"
   );
   const navigate = useNavigate();
-  const { isAuthenticated, user } = useAuth();
+  const { isAuthenticated, user, logout } = useAuth();
+  const { add } = useErrorBanners();
   useSocketErrors();
 
   useEffect(() => {
@@ -22,8 +24,38 @@ export default function HomeView() {
     }
   }, [isAuthenticated, navigate]);
 
-  if (!isAuthenticated || !user) {
+  useEffect(() => {
+    if (isAuthenticated && !user) {
+      add({
+        type: "error",
+        title: "Session Error",
+        message: "Your session data is incomplete. Please log in again.",
+        autoDismiss: true,
+        dismissAfter: 3000,
+      });
+
+      const timer = setTimeout(() => {
+        logout();
+        navigate("/login");
+      }, 3500);
+
+      return () => clearTimeout(timer);
+    }
+  }, [isAuthenticated, user, add, logout, navigate]);
+
+  if (!isAuthenticated) {
     return <div>Loading...</div>;
+  }
+
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Redirecting to login...</p>
+        </div>
+      </div>
+    );
   }
 
   return (

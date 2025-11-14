@@ -1,13 +1,74 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Users, Heart } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { Users, UserPlus } from "lucide-react";
+import { useSocketStore } from "@/lib/socket";
 
 export function WelcomeHeader({ username }: { username: string }) {
   const [showPlayers, setShowPlayers] = useState(true);
-  const [playersOnline, setPlayersOnline] = useState(5);
-  const [friendsOnline, setFriendsOnline] = useState(3);
+  const [playersOnline, setPlayersOnline] = useState(0);
+  const [friendsOnline, setFriendsOnline] = useState(0);
   const [animate, setAnimate] = useState(false);
+  const { send, on, off, isConnected } = useSocketStore();
+  const playerCountIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const lastPlayerCountRef = useRef<string>("");
+
+  useEffect(() => {
+    if (isConnected) {
+      send("request_player_count", undefined);
+
+      playerCountIntervalRef.current = setInterval(() => {
+        send("request_player_count", undefined);
+      }, 2000);
+
+      return () => {
+        if (playerCountIntervalRef.current) {
+          clearInterval(playerCountIntervalRef.current);
+          playerCountIntervalRef.current = null;
+        }
+      };
+    } else {
+      if (playerCountIntervalRef.current) {
+        clearInterval(playerCountIntervalRef.current);
+        playerCountIntervalRef.current = null;
+      }
+    }
+  }, [isConnected, send]);
+
+  useEffect(() => {
+    const handlePlayerCountUpdate = (data: {
+      playersOnline: number;
+      friendsOnline: number;
+    }) => {
+      const newDataString = JSON.stringify(data);
+      if (newDataString !== lastPlayerCountRef.current) {
+        console.log("[WelcomeHeader] Player count updated:", data);
+        lastPlayerCountRef.current = newDataString;
+
+        const oldPlayers = playersOnline;
+        const oldFriends = friendsOnline;
+
+        setPlayersOnline(data.playersOnline);
+        setFriendsOnline(data.friendsOnline);
+
+        if (
+          data.playersOnline !== oldPlayers ||
+          data.friendsOnline !== oldFriends
+        ) {
+          setAnimate(true);
+          setTimeout(() => setAnimate(false), 600);
+        }
+      } else {
+        console.log("[WelcomeHeader] Player count unchanged");
+      }
+    };
+
+    on("player_count_update", handlePlayerCountUpdate);
+
+    return () => {
+      off("player_count_update", handlePlayerCountUpdate);
+    };
+  }, [on, off, playersOnline, friendsOnline]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -17,24 +78,11 @@ export function WelcomeHeader({ username }: { username: string }) {
   }, []);
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      const rand = Math.random();
-
-      if (rand > 0.6) {
-        const isPlayerChange = Math.random() > 0.5;
-        const isIncrease = Math.random() > 0.4;
-
-        if (isPlayerChange) {
-          setPlayersOnline((prev) => Math.max(0, prev + (isIncrease ? 1 : -1)));
-        } else {
-          setFriendsOnline((prev) => Math.max(0, prev + (isIncrease ? 1 : -1)));
-        }
-
-        setAnimate(true);
-        setTimeout(() => setAnimate(false), 600);
+    return () => {
+      if (playerCountIntervalRef.current) {
+        clearInterval(playerCountIntervalRef.current);
       }
-    }, 3000);
-    return () => clearInterval(interval);
+    };
   }, []);
 
   return (
@@ -53,7 +101,7 @@ export function WelcomeHeader({ username }: { username: string }) {
                   : "opacity-0 scale-75 -rotate-90"
               }`}
             />
-            <Heart
+            <UserPlus
               className={`absolute inset-0 transition-all duration-500 ${
                 !showPlayers
                   ? "opacity-100 scale-100 rotate-0"
