@@ -20,4 +20,5 @@ export interface AnoraUser {
       Vbucks: number;
     };
   };
+  token: string;
 }

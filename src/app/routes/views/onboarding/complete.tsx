@@ -32,7 +32,8 @@ export default function OnboardingCompleteView() {
     ];
 
     return () => timers.forEach((timer) => clearTimeout(timer));
-  }, [completeStep, router, setStep, isConnected, send, user]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">

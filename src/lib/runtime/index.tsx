@@ -8,6 +8,7 @@ import { usePathname } from "next/navigation";
 import { AnoraUser } from "@/types/anora";
 import { useErrorBanners } from "../stores/error_banner";
 import { NewUsernameData } from "@/types/socket";
+import { useUsernameCheck } from "../stores/username_check";
 
 interface RuntimeProps {
   children: React.ReactNode;
@@ -22,8 +23,14 @@ interface SocketErrorData {
 const DISABLED_ROUTES = ["/updater", "/login"];
 
 export const Runtime = ({ children }: RuntimeProps) => {
-  const { token, isAuthenticated, updateUser, setDisplayName, user } =
-    useAuth();
+  const {
+    token,
+    isAuthenticated,
+    updateUser,
+    updateToken,
+    setDisplayName,
+    user,
+  } = useAuth();
   const { config, isDev } = useConfig();
   const { add } = useErrorBanners();
   const { initialize, connect, disconnect, send, on, off } = useSocketStore();
@@ -38,6 +45,7 @@ export const Runtime = ({ children }: RuntimeProps) => {
   const isAuthenticatedRef = useRef(false);
   const userRequestIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const lastUserDataRef = useRef<string>("");
+  const { setAvailability } = useUsernameCheck.getState();
 
   useEffect(() => {
     isAuthenticatedRef.current = isAuthenticated;
@@ -50,10 +58,12 @@ export const Runtime = ({ children }: RuntimeProps) => {
       const newUserString = JSON.stringify(newUser);
       if (newUserString !== lastUserDataRef.current) {
         lastUserDataRef.current = newUserString;
+
+        // updateToken(newUser.token);
         updateUser(newUser);
       }
     };
-  }, [updateUser]);
+  }, [updateToken, updateUser]);
 
   useEffect(() => {
     sendRef.current = send;
@@ -182,7 +192,6 @@ export const Runtime = ({ children }: RuntimeProps) => {
     };
 
     const handleAuthenticated = () => {
-      console.log("[Runtime] Socket authenticated");
       startUserRequestInterval();
     };
 
@@ -208,11 +217,29 @@ export const Runtime = ({ children }: RuntimeProps) => {
       }
     };
 
+    const handleUsernameAvailable = (data: {
+      username: string;
+      available: boolean;
+    }) => {
+      console.log("[Runtime] Username available:", data);
+      setAvailability(
+        data.available,
+        data.available ? "" : "Username is already taken"
+      );
+    };
+
+    const handleUsernameTaken = (data: { username: string }) => {
+      console.log("[Runtime] Username taken:", data);
+      setAvailability(false, "Username is already taken");
+    };
+
     on("user", handleUserData);
     on("connected", handleConnected);
     on("authenticated", handleAuthenticated);
     on("disconnected", handleDisconnected);
     on("new_username", handleNewUsername);
+    on("username_available", handleUsernameAvailable);
+    on("username_taken", handleUsernameTaken);
 
     connect().catch((err) => {
       stopUserRequestInterval();
@@ -244,6 +271,7 @@ export const Runtime = ({ children }: RuntimeProps) => {
     on,
     off,
     setDisplayName,
+    setAvailability,
   ]);
 
   return <>{children}</>;

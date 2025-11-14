@@ -10,6 +10,7 @@ interface AuthState {
   authenticate: (token: string, user?: AnoraUser) => void;
   signOut: () => void;
   updateUser: (user: AnoraUser) => void;
+  updateToken: (token: string) => void;
   patchUser: (updates: Partial<AnoraUser>) => void;
   setLoading: (loading: boolean) => void;
   clear: () => void;
@@ -41,6 +42,10 @@ export const useAuthStore = create<AuthState>()(
 
       updateUser: (user) => {
         set({ currentUser: user });
+      },
+
+      updateToken: (token: string) => {
+        set({ accessToken: token });
       },
 
       patchUser: (updates) => {
@@ -110,6 +115,7 @@ export const useAuth = () => {
     login: store.authenticate,
     logout: store.signOut,
     updateUser: store.updateUser,
+    updateToken: store.updateToken,
     patchUser: store.patchUser,
     setDisplayName: store.setDisplayName,
     setLoading: store.setLoading,

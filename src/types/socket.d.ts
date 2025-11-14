@@ -20,6 +20,10 @@ export interface SocketEventMap {
   request_patch_notes: void;
   request_player_count: void;
 
+  check_username: { username: string };
+  username_available: { username: string; available: boolean };
+  username_taken: { username: string };
+
   news_update: { news: NewsItem[] };
   request_news: void;
 }

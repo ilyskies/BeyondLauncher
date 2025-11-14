@@ -1,18 +1,27 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { motion } from "framer-motion";
+import { useEffect, useRef, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { Background } from "@/components/shared/background";
-import { Check, Edit, Lock, AlertCircle } from "lucide-react";
+import { Check, Edit, Lock, AlertCircle, Loader2 } from "lucide-react";
 import { useNavigate } from "@/lib/hooks/useNavigate";
 import { useOnboarding } from "@/lib/stores/onboarding";
 import { useSocketStore } from "@/lib/socket";
 import { useAuth } from "@/lib/stores/auth";
 import { useErrorBanners } from "@/lib/stores/error_banner";
+import { useUsernameCheck } from "@/lib/stores/username_check";
 
 export default function UsernameView() {
   const [username, setUsername] = useState("");
   const [isValid, setIsValid] = useState(false);
+  const {
+    isChecking,
+    isAvailable,
+    error,
+    setChecking,
+    setAvailability,
+    reset,
+  } = useUsernameCheck();
   const [isAnimating, setIsAnimating] = useState(false);
   const [isLocked, setIsLocked] = useState(false);
   const [validationError, setValidationError] = useState("");
@@ -23,27 +32,71 @@ export default function UsernameView() {
   const { isAuthenticated } = useAuth();
   const { add } = useErrorBanners();
 
+  const timeoutRef = useRef<NodeJS.Timeout>(null);
+  const shouldLockRef = useRef(false);
+
   useEffect(() => {
     setStep("username");
   }, [setStep]);
+
+  useEffect(() => {
+    if (shouldLockRef.current && isValid && isAvailable && !isLocked) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setIsLocked(true);
+      shouldLockRef.current = false;
+    }
+  }, [isValid, isAvailable, isLocked]);
+
+  useEffect(() => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+    }
+
+    if (isValid && username && !isLocked) {
+      timeoutRef.current = setTimeout(() => {
+        setChecking(true);
+        if (isConnected) {
+          send("check_username", { username });
+        } else {
+          setChecking(false);
+          setAvailability(false, "Not connected to server");
+        }
+      }, 500);
+    } else {
+      if (!isLocked) {
+        reset();
+      }
+    }
+
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
+  }, [
+    username,
+    isValid,
+    isLocked,
+    isConnected,
+    send,
+    setChecking,
+    setAvailability,
+    reset,
+  ]);
 
   const validateUsername = (value: string) => {
     if (!/^[a-zA-Z0-9_]{3,20}$/.test(value)) {
       return "3-20 characters, letters, numbers, and underscores only";
     }
-
     const lowerValue = value.toLowerCase();
-
     if (/(.)\1{3,}/.test(value)) {
       return "Username contains too many repetitive characters";
     }
-
     const specialCharDensity =
       (value.match(/[0-9_]/g) || []).length / value.length;
     if (specialCharDensity > 0.6) {
       return "Username contains too many numbers or special characters";
     }
-
     const offensivePatterns = [
       /h[i1l|][t7][l1|][e3][r2]/,
       /[n|\|][a4@][z5$][i1l|]/,
@@ -110,7 +163,6 @@ export default function UsernameView() {
       /[c<\(][l1|][i1l|][t7]/,
       /[v\\\/\/][u7][l1|][v\\\/\/][a4@]/,
       /[d2][i1l|][l1|][d2][o0@]/,
-
       /i[h4#][a4@][t7][e3]/,
       /h[a4@][t7][e3]/,
       /k[i1l|][l1|][l1|][a4@][l1|][l1|]/,
@@ -136,41 +188,48 @@ export default function UsernameView() {
       /[m\\\/\/][e3][x%][i1l|][c<\(][a4@][n|\|]/,
       /[a4@][f7][r2][i1l|][c<\(][a4@][n|\|]/,
     ];
-
     for (const pattern of offensivePatterns) {
       if (pattern.test(lowerValue)) {
         return "Username contains inappropriate content";
       }
     }
-
     if (/([a-z0-9])\1{2,}/i.test(value)) {
       return "Username contains too many repeating characters";
     }
-
     return null;
   };
 
   const handleUsernameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setUsername(value);
-
     const error = validateUsername(value);
     setValidationError(error || "");
     setIsValid(!error);
+    if (error) {
+      reset();
+      setIsLocked(false);
+      shouldLockRef.current = false;
+    }
   };
 
   const handleLockUsername = () => {
-    if (isValid) {
-      setIsLocked(true);
+    if (isValid && !isLocked) {
+      shouldLockRef.current = true;
+      if (isAvailable) {
+        setIsLocked(true);
+        shouldLockRef.current = false;
+      }
     }
   };
 
   const handleEditUsername = () => {
     setIsLocked(false);
+    shouldLockRef.current = false;
+    reset();
   };
 
   const handleContinue = async () => {
-    if (isValid && !isAnimating && isLocked) {
+    if (isValid && isAvailable && !isAnimating && isLocked) {
       if (!isConnected || !isAuthenticated) {
         add({
           type: "error",
@@ -182,17 +241,12 @@ export default function UsernameView() {
         });
         return;
       }
-
       setIsAnimating(true);
-
       try {
         send("set_new_username", { username });
-
         saveUsername(username);
         completeStep("username");
-
         setTimeout(() => {
-          console.log("Username set:", username);
           navigate("/onboarding/complete");
         }, 800);
       } catch (error) {
@@ -209,10 +263,11 @@ export default function UsernameView() {
     }
   };
 
+  const canContinue = isValid && isAvailable && isLocked && !isAnimating;
+
   return (
     <div className="relative min-h-screen bg-background flex items-center justify-center p-4">
       <Background />
-
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -235,111 +290,198 @@ export default function UsernameView() {
             </label>
 
             <div className="relative">
-              {isLocked ? (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="flex items-center"
-                >
-                  <div className="w-full px-4 py-3 pr-12 bg-muted/50 border border-border rounded-lg text-muted-foreground cursor-not-allowed">
-                    {username}
-                  </div>
-                  <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
-                    <Lock className="w-4 h-4 text-muted-foreground" />
-                    <motion.button
-                      onClick={handleEditUsername}
-                      whileHover={{ scale: 1.1 }}
-                      whileTap={{ scale: 0.9 }}
-                      className="p-1 text-muted-foreground hover:text-foreground rounded cursor-pointer"
-                    >
-                      <Edit className="w-4 h-4" />
-                    </motion.button>
-                  </div>
-                </motion.div>
-              ) : (
-                <>
-                  <motion.input
-                    type="text"
-                    value={username}
-                    onChange={handleUsernameChange}
-                    onBlur={handleLockUsername}
-                    placeholder="Enter username"
-                    whileFocus={{ scale: 1.02 }}
+              <AnimatePresence mode="wait">
+                {isLocked ? (
+                  <motion.div
+                    key="locked"
+                    initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.95, y: -10 }}
                     transition={{ duration: 0.2 }}
-                    className="w-full px-4 py-3 pr-10 bg-background/50 border border-border rounded-lg text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-[#5865F2] focus:border-transparent transition-all duration-200 caret-[#5865F2] cursor-text"
-                    style={{
-                      caretColor: "#5865F2",
-                    }}
-                  />
-                  {isValid && (
-                    <motion.div
-                      initial={{ scale: 0 }}
-                      animate={{ scale: 1 }}
+                    className="flex items-center"
+                  >
+                    <div className="w-full px-4 py-3 pr-12 bg-muted/50 border border-border rounded-lg text-foreground cursor-not-allowed">
+                      {username}
+                    </div>
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                      <motion.div
+                        initial={{ scale: 0 }}
+                        animate={{ scale: 1 }}
+                        transition={{ delay: 0.1 }}
+                      >
+                        <Lock className="w-4 h-4 text-muted-foreground" />
+                      </motion.div>
+                      <motion.button
+                        onClick={handleEditUsername}
+                        whileHover={{ scale: 1.1 }}
+                        whileTap={{ scale: 0.9 }}
+                        className="p-1 text-muted-foreground hover:text-foreground rounded cursor-pointer transition-colors"
+                      >
+                        <Edit className="w-4 h-4" />
+                      </motion.button>
+                    </div>
+                  </motion.div>
+                ) : (
+                  <motion.div
+                    key="editable"
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    transition={{ duration: 0.2 }}
+                    className="relative"
+                  >
+                    <motion.input
+                      type="text"
+                      value={username}
+                      onChange={handleUsernameChange}
+                      onBlur={handleLockUsername}
+                      placeholder="Enter username"
+                      whileFocus={{ scale: 1.02 }}
                       transition={{ duration: 0.2 }}
-                    >
-                      <Check className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-green-500" />
-                    </motion.div>
-                  )}
-                  {validationError && (
-                    <motion.div
-                      initial={{ scale: 0 }}
-                      animate={{ scale: 1 }}
-                      className="absolute right-3 top-1/2 -translate-y-1/2"
-                    >
-                      <AlertCircle className="w-5 h-5 text-red-500" />
-                    </motion.div>
-                  )}
-                </>
-              )}
+                      className="w-full px-4 py-3 pr-10 bg-background/50 border border-border rounded-lg text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-[#5865F2] focus:border-transparent transition-all duration-200 caret-[#5865F2] cursor-text"
+                      style={{ caretColor: "#5865F2" }}
+                    />
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                      <AnimatePresence mode="wait">
+                        {isChecking && (
+                          <motion.div
+                            key="checking"
+                            initial={{ scale: 0, rotate: -180 }}
+                            animate={{ scale: 1, rotate: 0 }}
+                            exit={{ scale: 0, rotate: 180 }}
+                            transition={{ duration: 0.2 }}
+                          >
+                            <Loader2 className="w-4 h-4 text-muted-foreground animate-spin" />
+                          </motion.div>
+                        )}
+                        {!isChecking && isValid && isAvailable && (
+                          <motion.div
+                            key="available"
+                            initial={{ scale: 0 }}
+                            animate={{ scale: 1 }}
+                            transition={{
+                              type: "spring",
+                              stiffness: 500,
+                              damping: 15,
+                            }}
+                          >
+                            <Check className="w-4 h-4 text-green-500" />
+                          </motion.div>
+                        )}
+                        {!isChecking && (validationError || error) && (
+                          <motion.div
+                            key="error"
+                            initial={{ scale: 0 }}
+                            animate={{ scale: 1 }}
+                            transition={{
+                              type: "spring",
+                              stiffness: 500,
+                              damping: 15,
+                            }}
+                          >
+                            <AlertCircle className="w-4 h-4 text-red-500" />
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
 
-            {validationError ? (
-              <motion.p
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="mt-2 text-xs text-red-500 flex items-center gap-1"
-              >
-                <AlertCircle className="w-3 h-3" />
-                {validationError}
-              </motion.p>
-            ) : (
-              <p className="mt-2 text-xs text-muted-foreground">
-                3-20 characters, letters, numbers, and underscores only
-              </p>
-            )}
+            <AnimatePresence>
+              {validationError && (
+                <motion.p
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="mt-2 text-xs text-red-500 flex items-center gap-1 overflow-hidden"
+                >
+                  <AlertCircle className="w-3 h-3 flex-shrink-0" />
+                  {validationError}
+                </motion.p>
+              )}
+              {error && (
+                <motion.p
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="mt-2 text-xs text-red-500 flex items-center gap-1 overflow-hidden"
+                >
+                  <AlertCircle className="w-3 h-3 flex-shrink-0" />
+                  {error}
+                </motion.p>
+              )}
+              {isChecking && (
+                <motion.p
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="mt-2 text-xs text-muted-foreground flex items-center gap-1 overflow-hidden"
+                >
+                  <Loader2 className="w-3 h-3 animate-spin flex-shrink-0" />
+                  Checking availability...
+                </motion.p>
+              )}
+              {!validationError && !error && !isChecking && (
+                <motion.p
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="mt-2 text-xs text-muted-foreground"
+                >
+                  3-20 characters, letters, numbers, and underscores only
+                </motion.p>
+              )}
+            </AnimatePresence>
           </div>
 
           <motion.button
             onClick={handleContinue}
-            disabled={!isValid || isAnimating || !isLocked}
-            whileHover={
-              isValid && isLocked && !isAnimating ? { scale: 1.02 } : {}
-            }
-            whileTap={
-              isValid && isLocked && !isAnimating ? { scale: 0.98 } : {}
-            }
+            disabled={!canContinue}
+            whileHover={canContinue ? { scale: 1.02, y: -1 } : {}}
+            whileTap={canContinue ? { scale: 0.98, y: 0 } : {}}
             animate={isAnimating ? { scale: 0.98 } : {}}
             className={`
-              w-full py-3 px-4 rounded-xl font-medium text-base transition-all duration-200 select-none cursor-pointer
+              w-full py-3 px-4 rounded-xl font-medium text-base transition-all duration-200 select-none
+              relative overflow-hidden
               ${
-                isValid && isLocked && !isAnimating
-                  ? "bg-[#5865F2] hover:bg-[#4752C4] text-white cursor-pointer"
+                canContinue
+                  ? "bg-[#5865F2] hover:bg-[#4752C4] text-white cursor-pointer shadow-lg hover:shadow-xl"
                   : "bg-muted text-muted-foreground cursor-not-allowed"
               }
             `}
           >
-            {isAnimating ? (
-              <div className="flex items-center justify-center">
+            <AnimatePresence mode="wait">
+              {isAnimating ? (
                 <motion.div
-                  animate={{ rotate: 360 }}
-                  transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                  className="w-5 h-5 border-2 border-white border-t-transparent rounded-full mr-2"
-                />
-                Completing Setup...
-              </div>
-            ) : (
-              "Complete Setup"
-            )}
+                  key="loading"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  className="flex items-center justify-center"
+                >
+                  <motion.div
+                    animate={{ rotate: 360 }}
+                    transition={{
+                      duration: 1,
+                      repeat: Infinity,
+                      ease: "linear",
+                    }}
+                    className="w-5 h-5 border-2 border-white border-t-transparent rounded-full mr-2"
+                  />
+                  Completing Setup...
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="default"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                >
+                  Complete Setup
+                </motion.div>
+              )}
+            </AnimatePresence>
           </motion.button>
         </div>
       </motion.div>
