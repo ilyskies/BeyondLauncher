@@ -118,6 +118,7 @@ export function LibrarySection() {
               season={build.season}
               size={build.size}
               dateAdded={build.dateAdded}
+              netcl={build.netcl}
               supported={build.supported}
             />
           </div>

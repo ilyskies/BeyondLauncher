@@ -1,9 +1,11 @@
-"use client";
-
-import { useState } from "react";
-import { Settings, Trash, Lock, Play, FolderOpen } from "lucide-react";
+import { useState, useEffect } from "react";
+import { MoreVertical, Trash, FolderOpen, Lock } from "lucide-react";
 import Image from "next/image";
 import { useBuildStore } from "@/lib/stores/builds";
+import { useErrorBanners } from "@/lib/stores/error_banner";
+import { invoke } from "@tauri-apps/api/core";
+import { useSocketStore } from "@/lib/socket";
+import { openPath } from "@tauri-apps/plugin-opener";
 
 interface LibraryItemProps {
   title: string;
@@ -11,6 +13,7 @@ interface LibraryItemProps {
   image?: string;
   id: string;
   season?: string;
+  netcl?: string;
   size?: string;
   supported?: boolean;
   dateAdded?: string;
@@ -22,28 +25,208 @@ export function LibraryItem({
   image,
   id,
   season,
+  netcl,
   size,
   supported = true,
   dateAdded,
 }: LibraryItemProps) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-  const { removeBuild, setSelectedBuild } = useBuildStore();
+  const [isGameRunning, setIsGameRunning] = useState(false);
+  const [isLaunching, setIsLaunching] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
+  const { removeBuild, setSelectedBuild, getBuild } = useBuildStore();
+  const { add: addErrorBanner } = useErrorBanners();
 
-  const handlePlay = () => {
-    if (!supported) return;
-    setSelectedBuild(id);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (isHovered) {
+        return;
+      }
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [isHovered]);
+
+  useEffect(() => {
+    const checkGameStatus = async () => {
+      try {
+        const running = await invoke<boolean>("is_game_running");
+        setIsGameRunning(running);
+        if (!running) {
+          setIsClosing(false);
+        }
+      } catch (error) {
+        console.error("Failed to check game status:", error);
+      }
+    };
+
+    checkGameStatus();
+    const interval = setInterval(checkGameStatus, 3000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const showError = (title: string, message: string) => {
+    addErrorBanner({
+      type: "error",
+      title,
+      message,
+      autoDismiss: true,
+      dismissAfter: 5000,
+    });
+  };
+
+  const showSuccess = (title: string, message: string) => {
+    addErrorBanner({
+      type: "success",
+      title,
+      message,
+      autoDismiss: true,
+      dismissAfter: 3000,
+    });
+  };
+
+  const getExchangeCode = (): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        off("exchange_code", handleExchangeCode);
+        reject(new Error("Exchange code request timed out"));
+      }, 10000);
+
+      const handleExchangeCode = (data: { Code: string }) => {
+        clearTimeout(timeout);
+        off("exchange_code", handleExchangeCode);
+
+        if (!data?.Code || data.Code.trim() === "") {
+          reject(new Error("Invalid or empty exchange code received"));
+          return;
+        }
+
+        resolve(data.Code);
+      };
+
+      const { send, on, off } = useSocketStore.getState();
+      on("exchange_code", handleExchangeCode);
+      send("request_exchange_code", undefined);
+    });
+  };
+
+  const handlePlay = async () => {
+    if (!supported) {
+      showError("Build Not Supported", `${title} is not currently supported.`);
+      return;
+    }
+
+    if (isLaunching || isClosing) return;
+
+    if (isGameRunning) {
+      setIsClosing(true);
+      try {
+        await invoke("close_game");
+        showSuccess("Game Closed", `${title} has been closed`);
+      } catch (error) {
+        console.error("Failed to close game:", error);
+        showError(
+          "Close Failed",
+          `Failed to close ${title}: ${
+            error instanceof Error ? error.message : "Unknown error"
+          }`
+        );
+        setIsClosing(false);
+      }
+      return;
+    }
+
+    setIsLaunching(true);
+
+    try {
+      setSelectedBuild(id);
+
+      const build = getBuild(id);
+      if (!build) {
+        showError("Build Not Found", `Could not find build: ${title}`);
+        setIsLaunching(false);
+        return;
+      }
+
+      const shippingPath = `${build.path}\\FortniteGame\\Binaries\\Win64\\FortniteClient-Win64-Shipping.exe`;
+
+      const exists = await invoke<boolean>("check_file_exists", {
+        path: shippingPath,
+      });
+      if (!exists) {
+        showError(
+          "Executable Not Found",
+          `Fortnite executable not found at: ${shippingPath}`
+        );
+        setIsLaunching(false);
+        return;
+      }
+
+      const exchangeCode = await getExchangeCode();
+
+      const isLaunched = await invoke<boolean>("launch_game", {
+        filePath: shippingPath,
+        exchangeCode,
+      });
+
+      if (!isLaunched) {
+        throw new Error("Failed to launch");
+      }
+
+      showSuccess("Game Launched", `${title} is now running`);
+    } catch (error) {
+      console.error("Failed to launch build:", error);
+      showError(
+        "Launch Failed",
+        `Failed to launch ${title}: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
+    } finally {
+      setIsLaunching(false);
+    }
   };
 
   const handleDelete = async () => {
     setIsDeleting(true);
     try {
       removeBuild(id);
+      showSuccess(
+        "Build Deleted",
+        `${title} has been removed from your library.`
+      );
     } catch (error) {
       console.error("Failed to delete build:", error);
+      showError(
+        "Delete Failed",
+        `Failed to delete ${title}: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
     } finally {
       setIsDeleting(false);
       setIsMenuOpen(false);
+    }
+  };
+
+  const handleOpenFolder = async () => {
+    try {
+      const build = getBuild(id);
+      if (!build) {
+        showError("Build Not Found", `Could not find build: ${title}`);
+        return;
+      }
+
+      await openPath(build.path);
+    } catch (error) {
+      console.error("Failed to open folder:", error);
+      showError(
+        "Open Folder Failed",
+        `Failed to open folder: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
     }
   };
 
@@ -57,102 +240,167 @@ export function LibraryItem({
   };
 
   return (
-    <div className="group relative cursor-pointer aspect-[3/4] w-full overflow-hidden rounded-xl border border-white/10 bg-zinc-900/50 shadow-lg transition-all duration-300 hover:border-primary/50 hover:shadow-[0_0_30px_-10px_rgba(var(--primary),0.3)]">
-      <div className="absolute inset-0">
+    <div
+      className="w-full cursor-pointer"
+      style={{ aspectRatio: "3/4" }}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      <div
+        className="relative w-full h-[calc(100%-70px)] overflow-hidden rounded-lg"
+        onClick={(e) => {
+          if (!isMenuOpen && supported) {
+            handlePlay();
+          }
+        }}
+      >
         {image ? (
           <Image src={image} alt={title} fill className="object-cover" />
         ) : (
-          <div className="absolute inset-0 bg-gradient-to-br from-blue-600/20 to-purple-600/20 flex items-center justify-center">
-            <div className="text-center text-white">
-              <div className="text-2xl font-bold mb-1">{season || "S?"}</div>
-              <div className="text-xs opacity-80">No Image</div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent" />
-
-      {!supported && (
-        <div className="absolute inset-0 bg-black/60 flex items-center justify-center cursor-not-allowed">
-          <Lock className="h-12 w-12 text-gray-400" />
-        </div>
-      )}
-
-      <div className="absolute right-3 top-3 z-20">
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            setIsMenuOpen(!isMenuOpen);
-          }}
-          className="flex cursor-pointer h-8 w-8 items-center justify-center rounded-full bg-black/40 backdrop-blur-md transition-all duration-300 hover:bg-black/60 hover:scale-110"
-        >
-          <Settings className="h-5 w-5 text-white transition-transform duration-300" />
-        </button>
-
-        {isMenuOpen && (
-          <div className="absolute right-0 top-10 z-30 w-48 overflow-hidden rounded-xl border border-white/10 bg-[#1a1d24] shadow-2xl ring-1 ring-black animate-in fade-in-0 zoom-in-95 slide-in-from-top-2 duration-200">
-            <div className="p-2">
-              <div className="px-2 py-1.5 text-xs text-zinc-400 space-y-1 cursor-default">
-                <div className="flex items-center justify-between">
-                  <span>Size:</span>
-                  <span className="font-mono">{size || "Unknown"}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span>Added:</span>
-                  <span>{formatDate(dateAdded)}</span>
-                </div>
+          <div className="w-full h-full bg-gradient-to-br from-primary/50 to-accent/40 flex items-center justify-center">
+            <div className="text-center">
+              <div className="text-6xl font-black text-primary/40">
+                {season || "S?"}
               </div>
+            </div>
+          </div>
+        )}
 
-              <div className="h-px bg-white/10 my-1" />
+        <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/60" />
 
-              <button
-                onClick={handleDelete}
-                disabled={isDeleting}
-                className="flex cursor-pointer w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-red-400 transition-all duration-300 hover:bg-red-500/10 hover:text-red-300 disabled:opacity-50 disabled:cursor-not-allowed hover:scale-[1.02] active:scale-[0.98]"
-              >
-                {isDeleting ? (
-                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-red-400 border-t-transparent" />
-                ) : (
-                  <Trash className="h-4 w-4 transition-transform duration-300" />
-                )}
-                {isDeleting ? "Deleting..." : "Delete Build"}
-              </button>
+        {isHovered && !isMenuOpen && (
+          <div className="absolute inset-0 bg-white/10 rounded-lg" />
+        )}
+
+        {!supported && (
+          <div className="absolute inset-0 bg-black/75 flex items-center justify-center">
+            <div className="flex flex-col items-center gap-3">
+              <Lock className="w-14 h-14 text-gray-400" />
+              <p className="text-gray-300 text-sm font-semibold">
+                Not Available
+              </p>
             </div>
           </div>
         )}
       </div>
 
-      {supported && (
-        <div
-          onClick={handlePlay}
-          className="absolute inset-0 flex items-center justify-center opacity-0 transition-all duration-500 group-hover:opacity-100 cursor-pointer"
-        >
-          <div className="bg-black/60 rounded-full p-4 border border-white/20 transition-all duration-500 group-hover:scale-110 group-hover:bg-black/70">
-            <Play className="h-8 w-8 text-white transition-transform duration-500 group-hover:scale-110" />
-          </div>
-        </div>
-      )}
+      <div className="px-4 py-3 h-20 flex flex-col justify-between bg-gradient-to-b from-card/80 to-card border-t border-border/50">
+        <h3 className="text-foreground font-bold text-sm truncate">{title}</h3>
 
-      <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/95 to-transparent">
-        <div className="flex items-start justify-between gap-2">
-          <div className="flex-1 min-w-0">
-            <h3 className="text-lg font-bold text-white leading-tight truncate">
-              {title}
-            </h3>
-            <p className="mt-1 font-mono text-xs text-zinc-400 truncate">
-              {version}
-            </p>
+        <div className="flex items-center justify-between">
+          <div className="flex items-baseline gap-2">
+            <span
+              className="text-xs font-semibold cursor-pointer"
+              onClick={(e) => {
+                e.stopPropagation();
+                handlePlay();
+              }}
+              style={{
+                color: isLaunching
+                  ? "rgb(101, 160, 255)"
+                  : isClosing
+                  ? "rgb(101, 160, 255)"
+                  : isGameRunning
+                  ? "rgb(168, 85, 247)"
+                  : "rgb(148, 163, 184)",
+              }}
+            >
+              {isLaunching
+                ? "Launching"
+                : isClosing
+                ? "Closing"
+                : isGameRunning
+                ? "Running"
+                : "Launch"}
+            </span>
+            <span className="text-xs text-muted-foreground">
+              {netcl?.replace("++Fortnite+Release-", "")}
+            </span>
+          </div>
+
+          <div className="relative">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsMenuOpen(!isMenuOpen);
+              }}
+              className="p-1 cursor-pointer hover:bg-primary/20 rounded transition-colors duration-150"
+            >
+              <MoreVertical className="w-5 h-5 text-muted-foreground hover:text-primary" />
+
+              {isMenuOpen && (
+                <>
+                  <div
+                    className="absolute right-0 top-full mt-2 w-56 bg-card border border-border rounded-lg shadow-xl z-[9999] overflow-hidden animate-in fade-in-0 slide-in-from-top-2 duration-200"
+                    style={{
+                      boxShadow: "0 10px 25px rgba(0, 0, 0, 0.5)",
+                    }}
+                  >
+                    <div className="bg-primary/10 px-4 py-2 border-b border-border">
+                      <p className="text-xs text-muted-foreground uppercase tracking-wider font-bold">
+                        Info
+                      </p>
+                    </div>
+
+                    <div className="px-4 py-3 space-y-2 text-xs border-b border-border">
+                      <div className="flex items-center justify-between">
+                        <span className="text-muted-foreground">Size:</span>
+                        <span className="text-foreground font-mono">
+                          {size || "Unknown"}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-muted-foreground">Added:</span>
+                        <span className="text-foreground">
+                          {formatDate(dateAdded)}
+                        </span>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleOpenFolder();
+                        setIsMenuOpen(false);
+                      }}
+                      className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-foreground hover:bg-primary/10 text-left border-b border-border cursor-pointer transition-colors duration-150"
+                    >
+                      <FolderOpen className="w-4 h-4" />
+                      <span className="font-semibold">Open Folder</span>
+                    </button>
+
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDelete();
+                      }}
+                      disabled={isDeleting}
+                      className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-destructive hover:bg-destructive/10 text-left disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                    >
+                      {isDeleting ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-destructive border-t-transparent rounded-full animate-spin" />
+                          <span className="font-semibold">Deleting...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Trash className="w-4 h-4" />
+                          <span className="font-semibold">Delete</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  <div
+                    className="fixed inset-0 z-[9998] animate-in fade-in-0 duration-150"
+                    onClick={() => setIsMenuOpen(false)}
+                  />
+                </>
+              )}
+            </button>
           </div>
         </div>
       </div>
-
-      {isMenuOpen && (
-        <div
-          className="fixed inset-0 z-10 cursor-pointer animate-in fade-in-0 duration-200"
-          onClick={() => setIsMenuOpen(false)}
-        />
-      )}
     </div>
   );
 }

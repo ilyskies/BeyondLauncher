@@ -26,6 +26,9 @@ export interface SocketEventMap {
 
   news_update: { news: NewsItem[] };
   request_news: void;
+
+  request_exchange_code: void;
+  exchange_code: { Code: string };
 }
 
 export type SocketEvent = keyof SocketEventMap;

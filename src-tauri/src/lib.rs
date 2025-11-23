@@ -1,15 +1,18 @@
-use tauri::{Emitter, Manager, webview::WebviewWindowBuilder, WebviewUrl};
+use tauri::{Emitter, Manager};
 use tauri_plugin_deep_link::DeepLinkExt;
 
 use crate::modules::build;
+use crate::modules::game;
 
 mod modules;
+mod utilities;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let port: u16 = 9527;
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_localhost::Builder::new(port).build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
@@ -62,7 +65,11 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             build::check_file_exists, 
             build::locate_version, 
-            build::get_directory_size
+            build::get_directory_size,
+
+            game::launch_game,
+            game::close_game,
+            game::is_game_running,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
