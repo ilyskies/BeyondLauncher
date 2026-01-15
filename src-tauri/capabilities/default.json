@@ -21,6 +21,8 @@
     "shell:default",
     "dialog:default",
     "opener:default",
+    "notification:allow-request-permission",
+    "notification:default",
     {
       "identifier": "opener:allow-open-path",
       "allow": [

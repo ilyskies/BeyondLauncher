@@ -6,13 +6,24 @@ use std::time::Duration;
 use winapi::um::processthreadsapi::GetProcessId;
 use winapi::um::shellapi::{ShellExecuteExA, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOA};
 use winapi::um::{handleapi::CloseHandle, winuser::SW_SHOW};
-use sysinfo::{ProcessExt, System, SystemExt};
+use sysinfo::{System, SystemExt, ProcessExt};
 
 use crate::utilities;
 
 const CREATE_NO_WINDOW: u32 = 0x08000000;
-const GAME_DLL_URL: &str = "https://cdn.discordapp.com/attachments/1363383529316024371/1441884971475402875/Starfall.dll?ex=69236b86&is=69221a06&hm=c900295b7df537a699a23b860e5f85acb22d62b0b9e50aff8570fbc4482b500d&";
+const CREATE_SUSPENDED: u32 = 0x00000004;
+const GAME_DLL_URL: &str = "https://cdn.ilyskies.wtf/BeyondTesting/Tellurium.dll";
 const STARTUP_DELAY: Duration = Duration::from_secs(2);
+
+static GAME_PROCESSES: &[&str] = &[
+    "EpicgamesLauncher.exe",
+    "FortniteLauncher.exe",
+    "FortniteClient-Win64-Shipping.exe",
+    "EasyAntiCheat_EOS.exe",
+    "EpicWebHelper.exe",
+    "FortniteClient-Win64-Shipping_BE.exe",
+    "FortniteClient-Win64-Shipping_EAC.exe",
+];
 
 #[tauri::command]
 pub fn launch_game(file_path: String, exchange_code: String) -> Result<bool, String> {
@@ -52,27 +63,13 @@ pub fn close_game() -> Result<(), String> {
 
 #[tauri::command]
 pub fn is_game_running() -> bool {
-    let fortnite_procs = [
-        "EpicgamesLauncher.exe",
-        "FortniteLauncher.exe",
-        "FortniteClient-Win64-Shipping.exe",
-        "EasyAntiCheat_EOS.exe",
-        "EpicWebHelper.exe",
-        "FortniteClient-Win64-Shipping_BE.exe",
-        "FortniteClient-Win64-Shipping_EAC.exe",
-    ];
-
     let mut system = System::new_all();
     system.refresh_processes();
 
-    for (_, process) in system.processes() {
+    system.processes().iter().any(|(_, process)| {
         let process_name = process.name();
-        if fortnite_procs.iter().any(|&proc| proc == process_name) {
-            return true;
-        }
-    }
-
-    false
+        GAME_PROCESSES.iter().any(|&proc| proc == process_name)
+    })
 }
 
 fn get_game_directory(file_path: &str) -> Result<PathBuf, String> {
@@ -94,8 +91,7 @@ fn build_launch_args(exchange_code: &str) -> Vec<String> {
         "-fromfl=eac".to_string(),
         "-fltoken=3db3ba5dcbd2e16703f3978d".to_string(),
         "-caldera=eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2NvdW50X2lkIjoiYmU5ZGE1YzJmYmVhNDQwN2IyZjQwZWJhYWQ4NTlhZDQiLCJnZW5lcmF0ZWQiOjE2Mzg3MTcyNzgsImNhbGRlcmFHdWlkIjoiMzgxMGI4NjMtMmE2NS00NDU3LTliNTgtNGRhYjNiNDgyYTg2IiwiYWNQcm92aWRlciI6IkVhc3lBbnRpQ2hlYXQiLCJub3RlcyI6IiIsImZhbGxiYWNrIjpmYWxzZX0.VAWQB67RTxhiWOxx7DBjnzDnXyyEnX7OljJm-j2d88G_WgwQ9wrE6lwMEHZHjBd1ISJdUO1UVUqkfLdU5nofBQ".to_string(),
-    
-        "-AUTH_LOGIN=unused".to_string(), 
+        "-AUTH_LOGIN=unused".to_string(),
         format!("-AUTH_PASSWORD={}", exchange_code),
         "-AUTH_TYPE=exchangecode".to_string(),
     ]
@@ -139,9 +135,10 @@ fn launch_elevated(exe_path: &Path, args: &[String]) -> Result<(), String> {
 
 fn spawn_suspended_process(exe_path: &Path, args: &[String]) -> Result<(), String> {
     Command::new(exe_path)
-        .creation_flags(CREATE_NO_WINDOW | 0x00000004)
+        .creation_flags(CREATE_NO_WINDOW | CREATE_SUSPENDED)
         .args(args)
         .stdout(Stdio::null())
+        .stderr(Stdio::null())
         .spawn()
         .map_err(|e| format!("Failed to spawn process: {}", e))?;
 

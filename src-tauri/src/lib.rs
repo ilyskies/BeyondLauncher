@@ -12,6 +12,7 @@ pub fn run() {
     let port: u16 = 9527;
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_localhost::Builder::new(port).build())
         .plugin(tauri_plugin_dialog::init())
@@ -19,7 +20,7 @@ pub fn run() {
             println!("a new app instance was opened with {argv:?} and the deep link event was already triggered");
             
             if let Some(url) = argv.get(1) {
-                if url.starts_with("anora://") {
+                if url.starts_with("beyond://") {
                     if let Some(window) = app.get_webview_window("main") {
                         let _ = window.emit("deep-link", vec![url.clone()]);
                     }
@@ -45,7 +46,7 @@ pub fn run() {
             #[cfg(desktop)]
             {
                 app.deep_link()
-                    .register("anora")
+                    .register("beyond")
                     .expect("Failed to register deep link scheme");
                 
                 if let Ok(Some(url)) = app.deep_link().get_current() {

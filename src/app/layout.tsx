@@ -1,11 +1,9 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import Runtime from "@/lib/runtime";
-import { SocketBanner } from "@/components/shared/banners/socket_banner";
-import { ErrorBannerHandler } from "@/components/shared/banners/error_banner_handler";
-import { ErrorBanner } from "@/components/shared/banners/error_banner";
-import { GlobalSocketErrorHandler } from "@/components/shared/global_socket_errors";
+import Runtime from "@/core/runtime";
+import { SocketBanner } from "@/shared/components/common/socket-banner";
+import { GlobalSocketErrorHandler } from "@/shared/components/common/global-socket-errors";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -33,8 +31,6 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <SocketBanner />
-        <ErrorBannerHandler />
-        <ErrorBanner />
         <GlobalSocketErrorHandler />
         <Runtime>{children}</Runtime>
       </body>

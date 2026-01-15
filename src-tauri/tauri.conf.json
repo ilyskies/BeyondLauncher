@@ -1,8 +1,8 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "anoralauncher",
+  "productName": "beyondlauncher",
   "version": "0.1.0",
-  "identifier": "com.anora.services.launcher",
+  "identifier": "com.beyond.services.launcher",
   "build": {
     "frontendDist": "../out",
     "devUrl": "http://localhost:3000",
@@ -14,10 +14,10 @@
     "windows": [
       {
         "label": "main",
-        "title": "Anora Launcher",
+        "title": "Beyond Launcher",
         "url": "/home",
-        "width": 1440,
-        "height": 768,
+        "width": 1200,
+        "height": 720,
         "resizable": true,
         "decorations": false,
         "visible": true,
@@ -46,7 +46,7 @@
   "plugins": {
     "deep-link": {
       "desktop": {
-        "schemes": ["anora"]
+        "schemes": ["beyond"]
       }
     }
   }

@@ -1,14 +1,9 @@
-use std::{fs, path::PathBuf};
+use std::{fs, path::{Path, PathBuf}};
+use rayon::prelude::*;
 
 #[tauri::command]
 pub async fn check_file_exists(path: &str) -> Result<bool, String> {
-    let file_path = std::path::PathBuf::from(path);
-
-    if !file_path.exists() {
-        return Ok(false);
-    }
-
-    Ok(true)
+    Ok(Path::new(path).exists())
 }
 
 #[tauri::command]
@@ -36,40 +31,49 @@ pub fn locate_version(file_path: &str) -> Result<Vec<String>, String> {
 
 #[tauri::command]
 pub fn get_directory_size(path: String) -> Result<u64, String> {
-    fn dir_size(path: &PathBuf) -> Result<u64, String> {
-        let mut size = 0;
-        if path.is_dir() {
-            for entry in fs::read_dir(path).map_err(|e| e.to_string())? {
-                let entry = entry.map_err(|e| e.to_string())?;
-                let path = entry.path();
-                if path.is_dir() {
-                    size += dir_size(&path)?;
-                } else {
-                    size += fs::metadata(&path).map_err(|e| e.to_string())?.len();
-                }
-            }
-        } else if path.is_file() {
-            size += fs::metadata(path).map_err(|e| e.to_string())?.len();
-        }
-        Ok(size)
+    let path = PathBuf::from(path);
+    
+    if path.is_file() {
+        return fs::metadata(&path)
+            .map(|m| m.len())
+            .map_err(|e| e.to_string());
+    }
+    
+    if !path.is_dir() {
+        return Ok(0);
     }
 
-    dir_size(&PathBuf::from(path))
+    let total_size = walkdir::WalkDir::new(&path)
+        .into_iter()
+        .par_bridge()
+        .filter_map(|entry| entry.ok())
+        .filter(|e| e.file_type().is_file())
+        .map(|entry| {
+            fs::metadata(entry.path())
+                .map(|m| m.len())
+                .unwrap_or(0)
+        })
+        .sum::<u64>();
+    
+    Ok(total_size)
 }
 
 fn find_pattern_positions(haystack: &[u8], needle: &[u8]) -> Vec<usize> {
+    let needle_len = needle.len();
+    if needle_len == 0 || haystack.len() < needle_len {
+        return Vec::new();
+    }
+
     haystack
-        .windows(needle.len())
+        .par_windows(needle_len)
         .enumerate()
-        .filter_map(
-            |(idx, window)| {
-                if window == needle {
-                    Some(idx)
-                } else {
-                    None
-                }
-            },
-        )
+        .filter_map(|(idx, window)| {
+            if window == needle {
+                Some(idx)
+            } else {
+                None
+            }
+        })
         .collect()
 }
 

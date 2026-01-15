@@ -1,4 +1,4 @@
-import { Router } from "@/lib/router/Router";
+import { Router } from "@/core/router/router";
 
 export default function Page() {
   return <Router />;
