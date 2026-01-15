@@ -3,12 +3,13 @@ import { persist, createJSONStorage } from "zustand/middleware";
 
 export interface LauncherConfig {
   wsEndpoint: string;
+  apiEndpoint: string;
   environment: "development" | "production";
 }
 
 const defaultConfig: LauncherConfig = {
   wsEndpoint: process.env.NEXT_PUBLIC_WS_URL || "ws://127.0.0.1:3011/ws",
-
+  apiEndpoint: process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:3011",
   environment:
     (process.env.NEXT_PUBLIC_ENV as "development" | "production") ||
     "production",
@@ -57,12 +58,13 @@ export const useConfigStore = create<ConfigState>()(
         config: state.config,
       }),
       version: 1,
-      migrate: (persistedState: Record<string, unknown>, version: number) => {
+      migrate: (persistedState: unknown, version: number) => {
         if (version === 0) {
+          const state = persistedState as Record<string, unknown>;
           return {
             config: {
               ...defaultConfig,
-              ...(persistedState.config as Partial<LauncherConfig>),
+              ...(state.config as Partial<LauncherConfig>),
             },
           };
         }

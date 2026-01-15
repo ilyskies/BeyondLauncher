@@ -11,6 +11,7 @@ import { onOpenUrl } from "@tauri-apps/plugin-deep-link";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 import { useOnboarding } from "@/features/onboarding/stores/onboarding";
+import { apiClient, API_ENDPOINTS } from "@/core/api";
 
 type LoginStatus = "idle" | "loading" | "success" | "failed";
 
@@ -31,31 +32,24 @@ export default function Login() {
     setStatus("loading");
 
     try {
-      const callback = await fetch(
-        "http://127.0.0.1:3011/discord/api/callback",
+      const response = await apiClient.get<{ authUrl?: string }>(
+        API_ENDPOINTS.auth.discordCallback,
         {
-          redirect: "manual",
-          headers: {
-            Accept: "application/json",
-          },
+          maxRedirects: 0,
+          validateStatus: (status) => status >= 200 && status < 400,
         }
       );
 
-      if (callback.status >= 300 && callback.status < 400) {
-        const location = callback.headers.get("Location");
+      if (response.status >= 300 && response.status < 400) {
+        const location = response.headers.location;
         if (location) {
           await open(location);
           return;
         }
       }
 
-      if (callback.ok) {
-        const response = await callback.json();
-        if (response.authUrl) {
-          await open(response.authUrl);
-        }
-      } else {
-        throw new Error(`Request failed: ${callback.status}`);
+      if (response.data.authUrl) {
+        await open(response.data.authUrl);
       }
     } catch (error) {
       console.error("Login failed:", error);
