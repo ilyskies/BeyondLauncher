@@ -241,6 +241,7 @@ export const LibrarySection = memo(function LibrarySection() {
                       alt="Build"
                       fill
                       className="object-cover"
+                      priority
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-[#0C0E12] to-transparent" />
                   </div>
@@ -252,6 +253,7 @@ export const LibrarySection = memo(function LibrarySection() {
                           alt="Icon"
                           fill
                           className="object-cover"
+                          priority
                         />
                       </div>
                       <div className="flex flex-col justify-center gap-0.5">

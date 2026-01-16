@@ -7,6 +7,7 @@ interface SocketErrorData {
   message: string;
   critical?: boolean;
   type?: string;
+  logout?: boolean;
 }
 
 export function useSocketErrorHandler() {
@@ -18,7 +19,7 @@ export function useSocketErrorHandler() {
     (errorData: SocketErrorData) => {
       const errorInfo = getErrorInfo(errorData);
 
-      if (errorInfo.shouldLogout) {
+      if (errorInfo.shouldLogout || errorData.logout) {
         logout();
       }
 
@@ -143,6 +144,18 @@ function getErrorInfo(errorData: SocketErrorData) {
       title: "Connection Error",
       message,
       shouldLogout: false,
+    };
+  }
+
+  if (
+    message?.includes("Service shutting down") ||
+    message?.includes("Server shutdown")
+  ) {
+    return {
+      type: "error" as const,
+      title: "Service Restarting",
+      message: "The service is restarting. Please restart your launcher.",
+      shouldLogout: true,
     };
   }
 

@@ -23,12 +23,6 @@ export function GreetingsSection({ user }: GreetingsSectionProps) {
 
   useEffect(() => {
     send("request_player_count", undefined);
-
-    const interval = setInterval(() => {
-      send("request_player_count", undefined);
-    }, 30000);
-
-    return () => clearInterval(interval);
   }, [send]);
 
   useEffect(() => {
