@@ -1,4 +1,8 @@
-import { SocketEventMap, SocketEventType, SocketMessage } from "@/shared/types/socket";
+import {
+  SocketEventMap,
+  SocketEventType,
+  SocketMessage,
+} from "@/shared/types/socket";
 import { SocketConnection } from "./connection";
 import { SocketEventManager } from "./event-manager";
 
@@ -44,9 +48,9 @@ export class LauncherSocket {
           resolve(void 0);
         };
 
-        const onError = (error: Event) => {
+        const onError = () => {
           cleanup();
-          reject(error);
+          reject(new Error("WebSocket connection failed"));
         };
 
         const cleanup = () => {
