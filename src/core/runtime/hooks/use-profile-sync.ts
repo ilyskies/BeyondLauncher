@@ -36,6 +36,13 @@ export function useProfileSync(
 
     send("request_user", undefined);
     send("request_profile_update", undefined);
+
+    intervalRef.current = setInterval(() => {
+      if (isAuthenticatedRef.current) {
+        send("request_user", undefined);
+        send("request_profile_update", undefined);
+      }
+    }, 10000);
   }, [send]);
 
   const stopSync = useCallback(() => {

@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { usePathname } from "next/navigation";
 import { getVersion } from "@tauri-apps/api/app";
 
@@ -31,6 +31,8 @@ export const Runtime = ({ children }: RuntimeProps) => {
     send,
     isAuthenticated
   );
+
+  const playerCountIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const shouldEnableSocket = !DISABLED_ROUTES.some((route) =>
     pathname.startsWith(route)
@@ -68,9 +70,34 @@ export const Runtime = ({ children }: RuntimeProps) => {
       handleError
     );
 
+    const startPlayerCountPolling = () => {
+      if (playerCountIntervalRef.current) {
+        clearInterval(playerCountIntervalRef.current);
+      }
+      send("request_player_count", undefined);
+      playerCountIntervalRef.current = setInterval(() => {
+        if (isAuthenticated) {
+          send("request_player_count", undefined);
+        }
+      }, 30000);
+    };
+
+    const stopPlayerCountPolling = () => {
+      if (playerCountIntervalRef.current) {
+        clearInterval(playerCountIntervalRef.current);
+        playerCountIntervalRef.current = null;
+      }
+    };
+
     on("user", handlers.onUserUpdate);
-    on("connected", handlers.onConnected);
-    on("authenticated", handlers.onAuthenticated);
+    on("connected", () => {
+      handlers.onConnected();
+      startPlayerCountPolling();
+    });
+    on("authenticated", () => {
+      handlers.onAuthenticated();
+      startPlayerCountPolling();
+    });
     on("disconnected", handlers.onDisconnected);
     on("new_username", handlers.onNewUsername);
     on("username_available", handlers.onUsernameAvailable);
@@ -78,16 +105,24 @@ export const Runtime = ({ children }: RuntimeProps) => {
     on("profile_update", handlers.onProfileUpdate);
     on("error", handlers.onError);
 
-    connect().catch((err) => {
-      stopSync();
-      handleError({
-        message: err.message || "Failed to connect to server",
-        critical: true,
+    connect()
+      .then(() => {
+        if (useSocketStore.getState().isConnected) {
+          startPlayerCountPolling();
+        }
+      })
+      .catch((err) => {
+        stopSync();
+        stopPlayerCountPolling();
+        handleError({
+          message: err.message || "Failed to connect to server",
+          critical: true,
+        });
       });
-    });
 
     return () => {
       stopSync();
+      stopPlayerCountPolling();
       off("user", handlers.onUserUpdate);
       off("connected", handlers.onConnected);
       off("authenticated", handlers.onAuthenticated);
@@ -110,6 +145,7 @@ export const Runtime = ({ children }: RuntimeProps) => {
     disconnect,
     on,
     off,
+    send,
     handleUserUpdate,
     startSync,
     stopSync,

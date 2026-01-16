@@ -11,7 +11,6 @@ interface GreetingsSectionProps {
 
 export function GreetingsSection({ user }: GreetingsSectionProps) {
   const [playerCount, setPlayerCount] = useState<number>(0);
-  const { send } = useSocketStore();
 
   const favoriteCharacter = user?.Profiles?.Athena?.FavoriteCharacter || "";
   const displayName = user?.UserAccount?.DisplayName || "Player";
@@ -20,10 +19,6 @@ export function GreetingsSection({ user }: GreetingsSectionProps) {
   const characterImageUrl = favoriteCharacter
     ? `https://fortnite-api.com/images/cosmetics/br/${favoriteCharacter}/icon.png`
     : "https://fortnite-api.com/images/cosmetics/br/cid_001_athena_commando_f_default/icon.png";
-
-  useEffect(() => {
-    send("request_player_count", undefined);
-  }, [send]);
 
   useEffect(() => {
     const { on, off } = useSocketStore.getState();

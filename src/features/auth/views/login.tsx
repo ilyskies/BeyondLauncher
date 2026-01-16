@@ -10,7 +10,10 @@ import { open } from "@tauri-apps/plugin-shell";
 import { onOpenUrl } from "@tauri-apps/plugin-deep-link";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
-import { useOnboarding } from "@/features/onboarding/stores/onboarding";
+import {
+  useOnboarding,
+  useOnboardingStore,
+} from "@/features/onboarding/stores/onboarding";
 import { apiClient, API_ENDPOINTS } from "@/core/api";
 
 type LoginStatus = "idle" | "loading" | "success" | "failed";
@@ -114,13 +117,16 @@ export default function Login() {
   useEffect(() => {
     if (isAuthenticated) {
       const timer = setTimeout(() => {
-        const isOnboardingComplete = completedSteps.includes("complete");
+        const onboardingState = useOnboardingStore.getState();
+        const isOnboardingComplete =
+          onboardingState.hasCompletedOnboarding ||
+          onboardingState.completedSteps.includes("complete");
         navigate(isOnboardingComplete ? "/home" : "/onboarding/username");
       }, 1000);
 
       return () => clearTimeout(timer);
     }
-  }, [isAuthenticated, navigate, completedSteps]);
+  }, [isAuthenticated, navigate]);
   return (
     <div className="relative min-h-screen flex items-center justify-center p-4 animate-in fade-in duration-500">
       <Particles quantity={90} staticity={70} ease={50} />
