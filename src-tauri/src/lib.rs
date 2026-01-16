@@ -1,4 +1,4 @@
-use tauri::{Emitter, Manager};
+use tauri::{Emitter, Manager, AppHandle};
 use tauri_plugin_deep_link::DeepLinkExt;
 
 use crate::modules::build;
@@ -6,6 +6,11 @@ use crate::modules::game;
 
 mod modules;
 mod utilities;
+
+#[tauri::command]
+fn get_app_identifier(app: AppHandle) -> String {
+    app.config().identifier.clone()
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -64,6 +69,8 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            get_app_identifier,
+            
             build::check_file_exists, 
             build::locate_version, 
             build::get_directory_size,

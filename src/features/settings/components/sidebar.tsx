@@ -1,7 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { User, Gamepad2, Palette, LogOut, LucideIcon } from "lucide-react";
+import { getVersion } from "@tauri-apps/api/app";
+import { invoke } from "@tauri-apps/api/core";
 import { LogoutModal } from "./logout-modal";
 
 type SettingsSection = "account" | "game" | "appearance";
@@ -12,8 +14,19 @@ interface SidebarProps {
   onLogout: () => void;
 }
 
-export function Sidebar({ activeSection, onSectionChange, onLogout }: SidebarProps) {
+export function Sidebar({
+  activeSection,
+  onSectionChange,
+  onLogout,
+}: SidebarProps) {
   const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [version, setVersion] = useState("...");
+  const [identifier, setIdentifier] = useState("...");
+
+  useEffect(() => {
+    getVersion().then(setVersion);
+    invoke<string>("get_app_identifier").then(setIdentifier);
+  }, []);
 
   const handleLogoutClick = () => {
     setShowLogoutModal(true);
@@ -31,33 +44,36 @@ export function Sidebar({ activeSection, onSectionChange, onLogout }: SidebarPro
   return (
     <>
       {showLogoutModal && (
-        <LogoutModal onConfirm={handleLogoutConfirm} onCancel={handleLogoutCancel} />
+        <LogoutModal
+          onConfirm={handleLogoutConfirm}
+          onCancel={handleLogoutCancel}
+        />
       )}
       <div className="w-56 h-full flex flex-col py-8 px-4">
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-white mb-1">Settings</h1>
         </div>
 
-      <div className="flex-1 space-y-1">
-        <SidebarButton
-          icon={User}
-          label="Account"
-          active={activeSection === "account"}
-          onClick={() => onSectionChange("account")}
-        />
-        <SidebarButton
-          icon={Gamepad2}
-          label="Game"
-          active={activeSection === "game"}
-          onClick={() => onSectionChange("game")}
-        />
-        <SidebarButton
-          icon={Palette}
-          label="Appearance"
-          active={activeSection === "appearance"}
-          onClick={() => onSectionChange("appearance")}
-        />
-      </div>
+        <div className="flex-1 space-y-1">
+          <SidebarButton
+            icon={User}
+            label="Account"
+            active={activeSection === "account"}
+            onClick={() => onSectionChange("account")}
+          />
+          <SidebarButton
+            icon={Gamepad2}
+            label="Game"
+            active={activeSection === "game"}
+            onClick={() => onSectionChange("game")}
+          />
+          <SidebarButton
+            icon={Palette}
+            label="Appearance"
+            active={activeSection === "appearance"}
+            onClick={() => onSectionChange("appearance")}
+          />
+        </div>
 
         <div className="space-y-3 pt-4">
           <button
@@ -67,8 +83,11 @@ export function Sidebar({ activeSection, onSectionChange, onLogout }: SidebarPro
             <LogOut className="w-4 h-4" />
             <span className="text-sm font-medium">Log out</span>
           </button>
-          
+
           <div className="px-3 pt-3 border-t border-white/5">
+            <p className="text-[10px] text-white/20 mb-1">
+              {identifier}/{version}
+            </p>
             <p className="text-[10px] text-white/30">Made with ❤️ by skies</p>
           </div>
         </div>
@@ -102,4 +121,3 @@ function SidebarButton({
     </button>
   );
 }
-
